@@ -1,7 +1,7 @@
 /***************************************************
- *   UV Meter.
- *
- * Connect:
+     UV Meter.
+
+   Connect:
  * * ML8511 to A4 input
  * * ADAFRUIT ADA1774 2.8 TFT Display With Resistive Touchscreen
 */
@@ -61,6 +61,8 @@ float max_intensity = 0.0;
 // volatage that represents 0 Mw/cm2 UV.  Moves a bit so allow onloine recalibration.
 float zero_voltage = 0.99;
 
+
+
 // Set warning levels for CF and TUBES. This is based on limited data at this stage.
 #define TUBE_LOW_THRESH 0.8
 #define TUBE_HI_THRESH 1.4
@@ -74,6 +76,10 @@ float zero_voltage = 0.99;
 
 // Use hardware SPI (on Uno, #13, #12, #11) and the above for CS/DC
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+
+#define MAX_VISUAL_OBJ 20
+#define MAX_BTN_OBJ 10
+
 
 // Text box object that allows contol of basic display parameters.
 class Box
@@ -90,8 +96,10 @@ class Box
 
     Box(Adafruit_ILI9341* _tft, int _x, int _y, int _width, int _height, String _text,
         unsigned _bk_color = WHITE, unsigned int _text_color = BLACK, unsigned short _text_size = 2, unsigned short _padding = 10):
-        tft(_tft), x(_x), y(_y), height(_height), width(_width), text(_text), bk_color(_bk_color), text_color(_text_color), text_size(_text_size), padding(_padding)
-    {}
+      tft(_tft), x(_x), y(_y), height(_height), width(_width), text(_text), bk_color(_bk_color), text_color(_text_color), text_size(_text_size), padding(_padding)
+    {
+      Register();
+    }
 
     // Repaint object if something has changed.
     void display(void)
@@ -115,6 +123,12 @@ class Box
         text = t;
         changed = true;     // set changed flag to trigger repaint.
       }
+    }
+
+    // Set methods
+    String getText()
+    {
+      return text;
     }
 
     void setText(float f)
@@ -147,24 +161,25 @@ class Box
       return text_color;
     }
 
-
+    virtual void Register();
 };
 
-
-// Button class that allows objects to be clicked.  
+// Button class that allows objects to be clicked.
 class Button : public Box
 {
   private:
     // Provide 2 states: selected and unselected, each with different display color.
     unsigned int unselect_color;
     unsigned int select_color;
-    bool selected = false;    
+    bool selected = false;
 
   public:
     // unselect color is default bk_color.  Add additional selected_color.
     Button(Adafruit_ILI9341* _tft, int _x, int _y, int _width, int _height, String _text, unsigned _bk_color = WHITE,
            unsigned int _text_color = BLACK, unsigned short _text_size = 2, unsigned int _select_color = GREEN):
-      Box(_tft, _x, _y, _width, _height, _text, _bk_color, _text_color, _text_size), select_color(_select_color), unselect_color(_bk_color) {}
+      Box(_tft, _x, _y, _width, _height, _text, _bk_color, _text_color, _text_size), select_color(_select_color), unselect_color(_bk_color) {
+      Register();
+    }
 
     // Set selected state.
     void setSelected(bool s)
@@ -190,13 +205,59 @@ class Button : public Box
       }
       return in;
     }
+
+    virtual void Register();
 };
 
+Box *Vis[MAX_VISUAL_OBJ] = {NULL};
+Button *Btns[MAX_BTN_OBJ] = {NULL};
+unsigned short VisCnt = 0;
+unsigned short BtnCnt = 0;
+
+// Register the a box in the list.
+// Called by the class constructor
+bool addBox(Box* box) {
+  if (VisCnt < MAX_VISUAL_OBJ) {
+    Vis[VisCnt] = box;
+    VisCnt++;
+    Serial.print("add Box");
+    Serial.print(VisCnt);
+    Serial.println(box->getText());
+    return true;
+  }
+  return false;
+}
+
+// Register the a button in the list.
+// Called by the class constructor
+bool addBtn(Button* btn) {
+  if (BtnCnt < MAX_BTN_OBJ) {
+    Btns[BtnCnt] = btn;
+    BtnCnt++;
+    Serial.print("add Btn ");
+    Serial.print(BtnCnt);
+    Serial.println(btn->getText());
+    return true;
+  }
+  return false;
+
+}
+
+void Box::Register() {
+
+  addBox(this);
+
+}
+void Button::Register() {
+  addBtn(this);
+  Box::Register();
+}
+
 // Define buttons
-Button btnReset = Button(&tft, 20, 250, 90, 40, "Reset", WHITE, BLACK, TEXT_MEDIUM);
-Button btnZero = Button(&tft, 130, 250, 90, 40, "CAL", WHITE, BLACK, TEXT_MEDIUM);
-Button btnTube = Button(&tft, 20, 200, 90, 40, "Tube", WHITE, BLACK, TEXT_MEDIUM, GREEN);
-Button btnCompact = Button(&tft, 130, 200, 90, 40, "CF", WHITE, BLACK, TEXT_MEDIUM, GREEN);
+Button btnReset = Button(&tft, 20, 250, 90, 40, "Reset", WHITE, BLACK, TEXT_MEDIUM);        // Reset max to current value.
+Button btnZero = Button(&tft, 130, 250, 90, 40, "CAL", WHITE, BLACK, TEXT_MEDIUM);          // Calibrate system so current value is 0.0 mW/cm2
+Button btnTube = Button(&tft, 20, 200, 90, 40, "Tube", WHITE, BLACK, TEXT_MEDIUM, GREEN);   // Set globe type to Tube
+Button btnCompact = Button(&tft, 130, 200, 90, 40, "CF", WHITE, BLACK, TEXT_MEDIUM, GREEN); // Set globe type to CF
 
 // Define other objects
 Box boxTitle = Box(&tft, 20, 10, 200, 40, " UV Meter", WHITE, BLUE, TEXT_LARGE);
@@ -210,6 +271,8 @@ Box boxCurrentIntUnits2 = Box(&tft, 205, 120, 40, 10, "cm2", BLACK, WHITE, TEXT_
 Box boxCurrentV = Box(&tft, 150, 140, 50, 20, "1.00", BLACK, WHITE, TEXT_MEDIUM, PAD_NONE);
 Box boxCurrentVUnits = Box(&tft, 205, 145, 20, 20, "V", BLACK, WHITE, TEXT_SMALL, PAD_NONE);
 
+
+
 // This is calibration data for the raw touch data to the screen coordinates
 #define TS_MINX 150
 #define TS_MINY 130
@@ -220,11 +283,10 @@ Box boxCurrentVUnits = Box(&tft, 205, 145, 20, 20, "V", BLACK, WHITE, TEXT_SMALL
 #define STMPE_CS 8
 Adafruit_STMPE610 ts = Adafruit_STMPE610(STMPE_CS);
 
-
 void setup()
 {
   pinMode(ReadUVintensityPin, INPUT);
-  
+
   Serial.begin(9600); //open serial port, set the baud rate to 9600 bps
   Serial.println("Starting up...");
 
@@ -278,6 +340,7 @@ void process_touch(float currentVoltage) {
 
     // Retrieve a point
     TS_Point p = ts.getPoint();
+    // Compute coordinates based on the rotation of the display
     p.x = map(TS_MAXY - p.x, TS_MINY, TS_MAXY, 0, tft.width());
     p.y = map(TS_MAXX - p.y, TS_MINX, TS_MAXX, 0, tft.height());
 
@@ -288,6 +351,9 @@ void process_touch(float currentVoltage) {
       Serial.println(p.y);
     }
 
+    // Check the different buttons.
+    // Don't make things more complicated thatn they need to be...
+    // could use a callback etc.
     if (btnZero.isIn(p)) {
       zero(currentVoltage);
       if (DEBUG) {
@@ -315,21 +381,11 @@ void process_touch(float currentVoltage) {
 }
 
 void display_all() {
-  btnZero.display();
-  btnReset.display();
-  btnTube.display();
-  boxMaxTitle.display();
-  boxCurrentTitle.display();
-  btnCompact.display();
-  boxTitle.display();
-  boxMaxInt.display();
-  boxMaxIntUnits.display();
-  boxCurrentInt.display();
-  boxCurrentIntUnits1.display();
-  boxCurrentIntUnits2.display();
-  boxCurrentV.display();
-  boxCurrentVUnits.display();
 
+  for (int i = 0; i < VisCnt; i++) {
+    Serial.println(i);
+    Vis[i]->display();
+  }
 }
 
 // Determine the color based on the intensity against the defined thresholds.
@@ -362,7 +418,10 @@ void loop()
 {
   int uvLevel = averageAnalogRead(ReadUVintensityPin);
 
+  // Read smoothed analog voltage
   float outputVoltage = 5.0 * uvLevel / 1024;
+
+  // Map to Intensity chart as per the datasheet.
   float uvIntensity = mapfloat(outputVoltage, zero_voltage, 2.9, 0.0, 15.0);
 
   Serial.print("UVAnalogOutput: ");
@@ -375,6 +434,7 @@ void loop()
   Serial.print(uvIntensity);
   Serial.print(" mW/cm^2");
 
+  // Update current maximum
   if (uvIntensity > max_intensity) {
     max_intensity = uvIntensity;
   }
@@ -387,6 +447,7 @@ void loop()
 
   Serial.println();
 
+  // Update screen fields.
   globe_t globe = (btnCompact.isSelected()) ? CF : TUBE;
 
   boxMaxInt.setText(max_intensity);
@@ -399,6 +460,7 @@ void loop()
 
   process_touch(outputVoltage);
 
+  // Display all objects.
   display_all();
   delay(500);
 }
@@ -424,4 +486,3 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
-
